@@ -1,0 +1,38 @@
+# Secrets. `.env` holds TYPESAFE_API_KEY, and the README's first step is
+# `cp .env.example .env`, so every user creates one. It must never be
+# committable: the committed file is `.env.example`, with an empty value.
+.env
+.env.*
+!.env.example
+
+# bench/results/ is deliberately TRACKED as measurement provenance: the curated
+# and deepset answers files carry scores, latencies and token counts, never
+# prompt text. Public-dataset runs are not all alike, though -
+# `jackhhao/jailbreak-classification` has no declared license, so its rows must
+# never be redistributed. This rule makes that structural instead of procedural,
+# because `record --dataset jailbreak` writes into the same tracked directory and
+# would otherwise be picked up by a plain `git add`.
+# deepset/prompt-injections is CC-BY-4.0, so its answers file stays tracked as
+# provenance for the published accuracy figures.
+bench/results/*-jailbreak-*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
