@@ -54,8 +54,9 @@ class Settings(BaseSettings):
 
     # 0.80, not 0.85: the joint sweep found 0.80 strictly better on all three
     # corpora at once (curated FP/FN unchanged, deepset FN 105 -> 96, jailbreak
-    # FN 50 -> 48) with no new false positive anywhere. The nearest benign
-    # `is_jailbreak` score in the curated corpus is 0.16, so the bar has room.
+    # FN 50 -> 48) with no new false positive anywhere. The highest benign
+    # `is_jailbreak` score in the curated corpus is 0.44 (`bl-12`, both runs),
+    # so 0.80 keeps room even against the manipulation penalty's 0.70 floor.
     # 0.75 is the first step that costs something (2 false positives on
     # jackhhao), which is why the free step stops here.
     jailbreak_block: float = 0.80
