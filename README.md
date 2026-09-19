@@ -49,7 +49,7 @@ Jev Prompt Sentry evaluates requests via a single batched call to TypeSafe's Sys
 | `data_exfil_risk` | Score (0–4) | Requests to reveal system prompts, tools, or prior context and transmit them to attacker-controlled destinations. |
 | `is_guard_manipulation` | Noul | Text attempting to influence the classifier itself by asserting safety, directing evaluation, or claiming prior approval. |
 
-Trust zones are named in the structured `state`, and a question is scoped by naming the field it judges. `is_jailbreak` asks about `user_message` and `is_indirect_injection` asks about `untrusted_content`, so neither silently treats the other zone's text as if the user had typed it. The other two are deliberately unscoped — they ask about "the input" and therefore read both zones, which is what lets a poisoned document raise a tenant's score (see [Known limitations](#known-limitations-v1)). Scoping here is the criteria naming a field, not an API-enforced boundary.
+Trust zones are named in the structured `state`, and a question is scoped by naming the field it judges. `is_jailbreak` asks about `user_message` and `is_indirect_injection` asks about `untrusted_content`, so neither silently treats the other zone's text as if the user had typed it. The other two are deliberately unscoped — they ask about "the input" and therefore read both zones, which is what lets a poisoned document raise a tenant's score (see [Known limitations](#known-limitations)). Scoping here is the criteria naming a field, not an API-enforced boundary.
 
 ## Thresholds and policy
 
@@ -125,19 +125,25 @@ There is no language cliff between English and German — a 1.3-point difference
 
 **Fail-closed default.** On timeout, 429, or internal failure:
 
-```
-HTTP 503 Service Unavailable
-{"type": "error", "error": {"type": "jev_prompt_sentry_guard_unavailable", "message": "..."}}
+```http
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/json
+
+{"type": "error", "error": {"type": "jev_prompt_sentry_guard_unavailable", "message": "Jev Prompt Sentry could not screen this request and is configured to fail closed."}}
 ```
 
 To forward unscreened requests instead, set `JEV_PROMPT_SENTRY_FAIL_OPEN=true`. Unscreened passes log at WARN and attach `X-Jev-Prompt-Sentry-Unscreened: true`.
 
 **Blocked requests.**
 
-```
-HTTP 403 Forbidden
+```http
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
 {"type": "error", "error": {"type": "jev_prompt_sentry_blocked", "message": "Request rejected by Jev Prompt Sentry."}}
 ```
+
+Both envelopes reuse Anthropic's own error shape, so an existing SDK client raises an ordinary `APIStatusError` rather than failing to parse something unfamiliar.
 
 Diagnostic reason strings and internal scores are intentionally omitted from client error payloads. Returning the signal and the bar it crossed would hand an attacker per-attempt gradient feedback for binary-searching a payload to just under the boundary. Full details are written exclusively to structured server logs.
 
@@ -157,7 +163,9 @@ Diagnostic reason strings and internal scores are intentionally omitted from cli
 - Set `JEV_PROMPT_SENTRY_LOG_PROMPTS=true` to capture full prompt strings for debugging. A firewall log is otherwise a pile of attack payloads plus everything private your users typed.
 - `TYPESAFE_API_KEY` is read server-side only. It is never forwarded upstream and never appears in a response or error body.
 
-## Known limitations (v1)
+## Known limitations
+
+All of these are current as of 0.1.0, and all are scope decisions rather than defects awaiting a fix.
 
 - **Ingress only.** Outgoing assistant responses are not screened.
 - **Non-text content.** Images and unrecognized raw structures are not parsed via OCR. Non-text blocks are logged via metrics counters.
