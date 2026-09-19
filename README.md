@@ -7,7 +7,7 @@ Jev Prompt Sentry acts as a reverse proxy in front of Anthropic's Messages API, 
 Measured over 1,650 recorded guard calls:
 
 - 0 false positives on 1,590 public-dataset rows
-- 9.1% missed attacks on `jackhhao/jailbreak-classification`
+- 9.1% missed attacks on `jackhhao/jailbreak-classification` (48 of its 527 attack rows)
 - ~$0.03 per 1,000 requests
 - p95 latency of 263ms (the 150ms design target was not met; see [Measured results](#measured-results))
 
@@ -21,6 +21,8 @@ See [docs/design.md](docs/design.md) for the threat model and the reasoning behi
 cp .env.example .env    # add your TYPESAFE_API_KEY
 uv run --python 3.12 uvicorn jev_prompt_sentry.app:app --port 8000
 ```
+
+Run this from the repository root, as with every command in [Benchmarking](#benchmarking-and-reproducibility): `uv run` syncs the project into its environment first, so `jev_prompt_sentry.app:app` resolves without a separate `pip install -e .`. From anywhere else, add `--project /path/to/jev-prompt-sentry`. Loading `.env` also resolves relative to the working directory.
 
 `TYPESAFE_API_KEY` is the only required value. Every `JEV_PROMPT_SENTRY_*` setting is optional — omit it from `.env` and the default applies. `.env.example` lists all of them, commented out at their defaults.
 
@@ -93,10 +95,12 @@ Tested against `jev-1.13.0` at default thresholds (2026-09-19):
 | Median input tokens | 575 | 559 | 702 |
 | Cost / 1k requests | $0.0242 | $0.0235 | $0.0295 |
 | False positives | 1 (3.3% of 30 benign) | 0 (0.0%) | 0 (0.0%) |
-| False negatives | 2 (6.7%) | 96 (47.3%) | 48 (9.1%) |
+| False negatives | 2 (6.7% of 30 attacks) | 96 (47.3% of 203 attacks) | 48 (9.1% of 527 attacks) |
 | Guard unavailable | 0 | 0 | 0 |
 
-The curated corpus is a regression gate, not an accuracy claim: it is 30 attacks and 30 benign lookalikes written to probe specific failure modes, so its rates describe the probe, not traffic.
+Both rates are taken over their own class, never over the corpus total. The splits are curated 30 attacks / 30 benign, deepset 203 / 343, jackhhao 527 / 517 — so 48 jackhhao misses is 9.1% of the 527 attacks in it, not 4.6% of all 1,044 rows. A blended rate over the total would improve with nothing but a larger benign slice.
+
+The curated corpus is a regression gate, not an accuracy claim: its 30 attacks and 30 benign lookalikes were written to probe specific failure modes, so its rates describe the probe, not traffic.
 
 ### Key findings
 
