@@ -22,6 +22,8 @@ cp .env.example .env    # add your TYPESAFE_API_KEY
 uv run --python 3.12 uvicorn jev_prompt_sentry.app:app --port 8000
 ```
 
+`TYPESAFE_API_KEY` is the only required value. Every `JEV_PROMPT_SENTRY_*` setting is optional — omit it from `.env` and the default applies. `.env.example` lists all of them, commented out at their defaults.
+
 **2. Client configuration**
 
 Route Anthropic SDK message traffic by updating `base_url`. Only `POST /v1/messages` is routed:
@@ -45,7 +47,7 @@ Jev Prompt Sentry evaluates requests via a single batched call to TypeSafe's Sys
 | `data_exfil_risk` | Score (0–4) | Requests to reveal system prompts, tools, or prior context and transmit them to attacker-controlled destinations. |
 | `is_guard_manipulation` | Noul | Text attempting to influence the classifier itself by asserting safety, directing evaluation, or claiming prior approval. |
 
-Trust zones are named in the structured `state`, so a question about `user_message` cannot silently read `untrusted_content`.
+Trust zones are named in the structured `state`, and a question is scoped by naming the field it judges. `is_jailbreak` asks about `user_message` and `is_indirect_injection` asks about `untrusted_content`, so neither silently treats the other zone's text as if the user had typed it. The other two are deliberately unscoped — they ask about "the input" and therefore read both zones, which is what lets a poisoned document raise a tenant's score (see [Known limitations](#known-limitations-v1)). Scoping here is the criteria naming a field, not an API-enforced boundary.
 
 ## Thresholds and policy
 
@@ -158,37 +160,42 @@ Diagnostic reason strings and internal scores are intentionally omitted from cli
 - **Stateless evaluation.** Operates per request. Multi-turn jailbreaks split across conversational turns are not correlated.
 - **Limited endpoints.** Routes `POST /v1/messages` only. Anthropic sub-resources (`/models`, `/batches`, `/count_tokens`) return 404.
 - **State manipulation.** `jev-1.13` evaluates prompt state text directly; novel adversarial patterns arguing their own safety may depress classifier scores. `is_guard_manipulation` is the mitigation, not a guarantee.
-- **Retrieval-poisoning DoS.** `data_exfil_risk` and `is_guard_manipulation` evaluate untrusted `tool_result` content. A poisoned third-party document can force a tenant's legitimate prompt into a 403 block.
+- **Retrieval-poisoning DoS.** `data_exfil_risk` and `is_guard_manipulation` are not field-scoped: their criteria ask about "the input", so both read `user_message` and `untrusted_content` together. A poisoned third-party document can therefore push a tenant's legitimate prompt into a 403. This is the cost of catching exfiltration setups that span the two zones, and it is a denial-of-service exposure rather than a bypass.
 - **The thresholds are this corpus's thresholds, not yours.** Re-run `record` and then `sweep --grid` on a sample of your own traffic before trusting them in front of it.
 
 ## Benchmarking and reproducibility
 
+Every command below runs from the repository root. `uv run` is not optional garnish: `bench/run.py` needs the project environment, and a bare `python bench/run.py` fails immediately on `ModuleNotFoundError: No module named 'dotenv'`.
+
 Unit tests:
 
 ```bash
-cd jev-prompt-sentry && uv run --python 3.12 --extra dev pytest -v
+uv run --python 3.12 --extra dev pytest -v
 ```
 
 Record the curated corpus (**billed API calls**):
 
 ```bash
-cd jev-prompt-sentry && uv run --python 3.12 --extra dev --extra bench python bench/run.py record
+uv run --python 3.12 --extra dev --extra bench python bench/run.py record
 ```
 
-Sweep thresholds offline (free, zero API calls — `policy.decide` is pure, so one billed recording pass buys unlimited replays at arbitrary thresholds):
+Record a public dataset (**billed API calls**; `--extra bench` pulls `datasets` and the language detector):
 
 ```bash
-cd jev-prompt-sentry && uv run --python 3.12 --extra dev python bench/run.py sweep --grid
+uv run --python 3.12 --extra dev --extra bench python bench/run.py record --dataset deepset    # 546 rows, CC-BY-4.0
+uv run --python 3.12 --extra dev --extra bench python bench/run.py record --dataset jailbreak  # 1,044 rows, local use only
 ```
 
-Public datasets:
+Sweep thresholds offline (free, zero API calls — `policy.decide` is pure, so one billed recording pass buys unlimited replays at arbitrary thresholds; `--extra bench` is unnecessary here because nothing is downloaded):
 
 ```bash
-python bench/run.py record --dataset deepset     # 546 rows, CC-BY-4.0
-python bench/run.py record --dataset jailbreak   # 1,044 rows, local use only
+uv run --python 3.12 --extra dev python bench/run.py sweep --grid
+uv run --python 3.12 --extra dev python bench/run.py sweep --answers bench/results/<file>.jsonl --grid
 ```
 
-The curated and deepset recordings are committed under `bench/results/`, so every number above for those two corpora is reproducible offline from a fresh clone. The jackhhao recording is **not** committed (see below), so the jailbreak column cannot be re-derived from this repository — recording it locally costs one billed pass.
+Without `--answers`, `sweep` replays the **most recent** recording in `bench/results/`, which in a fresh clone is the deepset one — pass `--answers` explicitly to sweep the curated corpus or to compare two runs of the same corpus.
+
+The curated and deepset recordings are committed under `bench/results/`, so every number above for those two corpora is reproducible offline from a fresh clone. The jackhhao recording is **not** committed — see [License and dataset terms](#license-and-dataset-terms) for why — so the jailbreak column cannot be re-derived from this repository; recording it locally costs one billed pass.
 
 ## License and dataset terms
 
