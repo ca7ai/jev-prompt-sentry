@@ -19,10 +19,20 @@ See [docs/design.md](docs/design.md) for the threat model and the reasoning behi
 
 ```bash
 cp .env.example .env    # add your TYPESAFE_API_KEY
-uv run --python 3.12 uvicorn jev_prompt_sentry.app:app --port 8000
+uv run --python 3.12 uvicorn jev_prompt_sentry.app:app --env-file .env --port 8000
 ```
 
-Run this from the repository root, as with every command in [Benchmarking](#benchmarking-and-reproducibility): `uv run` syncs the project into its environment first, so `jev_prompt_sentry.app:app` resolves without a separate `pip install -e .`. From anywhere else, add `--project /path/to/jev-prompt-sentry`. Loading `.env` also resolves relative to the working directory.
+`--env-file .env` is required, not decorative. It loads the file into the process environment before the app starts, which is what puts both the credential and any threshold overrides where each reader looks for them. Omit it and startup fails at the first guard client construction:
+
+```
+typesafe_sdk._core.errors.TypeSafeError: No API key was provided.
+Pass api_key or set the TYPESAFE_API_KEY environment variable.
+ERROR:    Application startup failed. Exiting.
+```
+
+The reason is that the two kinds of setting are read by different code. `TYPESAFE_API_KEY` is read by the TypeSafe SDK straight from `os.environ` — it is not a `Settings` field at all — while the `JEV_PROMPT_SENTRY_*` values are read by pydantic-settings, which parses `.env` itself and populates the model without ever touching `os.environ`. So the overrides would load either way; the key would not. `--env-file` makes one mechanism cover both, and `export`ing the key in your shell works equally well. (`bench/run.py` calls `load_dotenv()` on its own, which is why the benchmarks never hit this.)
+
+Run this from the repository root, as with every command in [Benchmarking](#benchmarking-and-reproducibility): `uv run` syncs the project into its environment first, so `jev_prompt_sentry.app:app` resolves without a separate `pip install -e .`. From anywhere else, add `--project /path/to/jev-prompt-sentry` and give `--env-file` a path that resolves from where you actually are — both it and pydantic's own `.env` lookup are relative to the working directory.
 
 `TYPESAFE_API_KEY` is the only required value. Every `JEV_PROMPT_SENTRY_*` setting is optional — omit it from `.env` and the default applies. `.env.example` lists all of them, commented out at their defaults.
 
